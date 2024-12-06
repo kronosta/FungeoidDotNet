@@ -46,6 +46,7 @@ namespace Kronosta.Fungeoid
     {
         bool IsSpaceValid(IFungeSpace<TCoords, TCell> space);
         Func<Funge<TCoords, TCell>, FungeHaltingData<TCell>> GetCommand(TCell command);
+        TCell? Start(Funge<TCoords, TCell> funge);
     }
 
     public interface IFungeIP<TCoords, TCell>
@@ -66,6 +67,34 @@ namespace Kronosta.Fungeoid
             this.Pos = Pos;
             this.Delta = Delta;
             this.Data = new Dictionary<object, object>();
+        }
+    }
+
+    public static class Funge
+    {
+        public static TCell? StartLanguage<TCoords, TCell>(
+            IFungeoidLanguage<TCoords, TCell> lang,
+            Funge<TCoords, TCell> funge)
+        {
+            return lang.Start(funge);
+        }
+
+        public static Task<TCell?> StartLanguageAsync<TCoords, TCell>(
+            IFungeoidLanguage<TCoords, TCell> lang,
+            Funge<TCoords, TCell> funge)
+        {
+            Task<TCell?> task = new Task<TCell?>(() => lang.Start(funge));
+            task.Start();
+            return task;
+        }
+
+        public static Task<TCell?> StartLanguageAsync<TCoords, TCell>(
+            IFungeoidLanguage<TCoords, TCell> lang,
+            Funge<TCoords, TCell> funge, CancellationToken token)
+        {
+            Task<TCell?> task = new Task<TCell?>(() => lang.Start(funge), token);
+            task.Start();
+            return task;
         }
     }
 
@@ -95,11 +124,13 @@ namespace Kronosta.Fungeoid
         public event EventHandler<FungeEventArgs>? Halt;
 
         public virtual IFungeSpace<TCoords, TCell> Space { get; set; }
+        public virtual bool ForceSpace { get; set; } = false;
         public virtual IDictionary<object, object> GlobalData { get; set; }
         public virtual IEnumerable<IFungeIP<TCoords, TCell>> IPs { get; set; }
 
         private IFungeoidLanguage<TCoords, TCell> _language;
         public virtual IFungeoidLanguage<TCoords, TCell> Language { get { return _language; } }
+        public virtual IFungeIP<TCoords, TCell>? CurrentIP { get; set; }
 
         public Funge(
             IFungeSpace<TCoords, TCell> Space,
@@ -122,6 +153,8 @@ namespace Kronosta.Fungeoid
 
         public virtual TCell? Run()
         {
+            if (!this.Language.IsSpaceValid(this.Space) && !this.ForceSpace)
+                throw new FungeException("Invalid space for language.");
             OnInitialize(ConstructEventArgs());
             var haltingData =
                 new FungeHaltingData<TCell> { ShouldHalt = false };
@@ -129,6 +162,7 @@ namespace Kronosta.Fungeoid
             {
                 OnTickStart(ConstructEventArgs());
                 foreach (var IP in IPs) {
+                    CurrentIP = IP;
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
                     OnBeforeCommand(ConstructEventArgs(IP));
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
